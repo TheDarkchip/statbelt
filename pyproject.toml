@@ -1,7 +1,7 @@
 [project]
 name = "statbelt"
 version = "0.1.0"
-description = "Add your description here"
+description = "A strict experimental harness for reproducible, statistically valid model evaluation."
 readme = "README.md"
 authors = [
     { name = "TheDarkchip", email = "robin.gieseke@me.com" }
