@@ -6,17 +6,32 @@ readme = "README.md"
 authors = [
     { name = "TheDarkchip", email = "robin.gieseke@me.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+keywords = ["machine-learning", "evaluation", "reproducibility", "statistics"]
 dependencies = [
     "numpy>=2.3.0",
     "pandas>=2.3.0",
     "scikit-learn>=1.7.0",
     "scipy>=1.16.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/TheDarkchip/statbelt"
+Repository = "https://github.com/TheDarkchip/statbelt"
+Issues = "https://github.com/TheDarkchip/statbelt/issues"
+Documentation = "https://github.com/TheDarkchip/statbelt#readme"
 
 [project.scripts]
 statbelt = "statbelt:main"

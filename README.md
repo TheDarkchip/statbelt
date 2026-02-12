@@ -2,6 +2,10 @@
 
 `statbelt` is a Python package for reproducible, statistically aware model evaluation.
 
+Current release status: **Alpha**.
+
+Supported Python versions: **3.11+**.
+
 ## v0 Features
 
 - `ExperimentalHarness` builder-style API for binary classification.
@@ -28,6 +32,14 @@ Validation is fail-fast. For example, `log_loss` requires `predict_proba`, and `
 requires `predict_proba` or `decision_function`.
 
 ## Installation
+
+Install from PyPI:
+
+```bash
+pip install statbelt
+```
+
+For local development:
 
 ```bash
 uv sync --all-groups
@@ -64,7 +76,7 @@ print(report.summary())
 ## CLI Smoke Check
 
 ```bash
-uv run statbelt
+statbelt
 ```
 
 Expected output:
