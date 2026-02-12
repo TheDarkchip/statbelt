@@ -117,7 +117,6 @@ For release operations (tagging, TestPyPI gate, PyPI publish), see `RELEASING.md
 
 - Binary classification only.
 - Confidence intervals only (no pairwise hypothesis tests yet).
-- Python API is the only supported interface in v0.
 
 ## License
 
