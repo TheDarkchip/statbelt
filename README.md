@@ -81,6 +81,9 @@ uv run ruff check .
 uv run pytest
 ```
 
+`uv run pytest` includes a terminal coverage report (missing lines included) via
+`pytest-cov`.
+
 ## Current Limits
 
 - Binary classification only.
