@@ -8,8 +8,11 @@ from typing import Self
 
 import numpy as np
 from numpy.typing import NDArray
-from sklearn.base import clone
+from scipy.stats import bootstrap as scipy_bootstrap
+from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import StratifiedKFold
+from sklearn.utils.multiclass import type_of_target, unique_labels
+from sklearn.utils.validation import check_X_y, check_is_fitted
 
 from statbelt.exceptions import ConfigurationError, StateError, ValidationError
 from statbelt.metrics import (
@@ -49,22 +52,35 @@ class ExperimentalHarness:
         self._ensure_configuring()
         X_array = np.asarray(X)
         y_array = np.asarray(y)
-
         if X_array.ndim == 1:
             X_array = X_array.reshape(-1, 1)
-        if X_array.ndim < 2:
-            raise ValidationError("X must be array-like with at least one feature column.")
-        if X_array.shape[1] < 1:
-            raise ValidationError("X must be array-like with at least one feature column.")
         if y_array.ndim != 1:
             raise ValidationError("y must be a one-dimensional array-like.")
-        if X_array.shape[0] != y_array.shape[0]:
-            raise ValidationError("X and y must have matching sample counts.")
-        if X_array.shape[0] < 2:
-            raise ValidationError("At least two samples are required.")
 
-        self._X = X_array
-        self._y = y_array
+        try:
+            validated_X, validated_y = check_X_y(
+                X_array,
+                y_array,
+                dtype=None,
+                ensure_all_finite="allow-nan",
+                ensure_min_samples=2,
+                ensure_min_features=1,
+                multi_output=False,
+            )
+        except (TypeError, ValueError) as exc:
+            message = str(exc)
+            if "0 feature(s)" in message or "Expected 2D array" in message:
+                raise ValidationError("X must be array-like with at least one feature column.") from exc
+            if "y should be a 1d array" in message:
+                raise ValidationError("y must be a one-dimensional array-like.") from exc
+            if "inconsistent numbers of samples" in message:
+                raise ValidationError("X and y must have matching sample counts.") from exc
+            if "minimum of 2 is required" in message:
+                raise ValidationError("At least two samples are required.") from exc
+            raise ValidationError(message) from exc
+
+        self._X = np.asarray(validated_X)
+        self._y = np.asarray(validated_y)
         return self
 
     def task(self, task_name: str) -> Self:
@@ -139,8 +155,8 @@ class ExperimentalHarness:
             bootstrap_resamples, Integral
         ):
             raise ValidationError("bootstrap_resamples must be an integer.")
-        if bootstrap_resamples < 1:
-            raise ValidationError("bootstrap_resamples must be at least 1.")
+        if bootstrap_resamples < 2:
+            raise ValidationError("bootstrap_resamples must be at least 2.")
         self._alpha = alpha_float
         self._bootstrap_resamples = int(bootstrap_resamples)
         return self
@@ -268,9 +284,14 @@ class ExperimentalHarness:
                 f"Only '{self._TASK_BINARY_CLASSIFICATION}' is supported in v0."
             )
 
-        class_labels, counts = np.unique(self._y, return_counts=True)
-        if class_labels.size != 2:
+        try:
+            target_type = type_of_target(self._y, raise_unknown=True)
+            class_labels = unique_labels(self._y)
+        except ValueError as exc:
+            raise ValidationError("binary_classification task requires exactly two classes.") from exc
+        if target_type != "binary" or class_labels.size != 2:
             raise ValidationError("binary_classification task requires exactly two classes.")
+        _, counts = np.unique(self._y, return_counts=True)
         if counts.min() < self._cv:
             raise ValidationError(
                 "Each class must have at least cv samples for stratified k-fold."
@@ -452,11 +473,21 @@ def _bootstrap_mean_interval(
         point = float(values[0])
         return point, point
 
-    rng = np.random.default_rng(random_state)
-    samples = rng.choice(values, size=(n_resamples, values.size), replace=True)
-    sample_means = samples.mean(axis=1)
-    ci_low = float(np.quantile(sample_means, alpha / 2))
-    ci_high = float(np.quantile(sample_means, 1 - (alpha / 2)))
+    if n_resamples == 1:
+        rng = np.random.default_rng(random_state)
+        sample_mean = float(rng.choice(values, size=values.size, replace=True).mean())
+        return sample_mean, sample_mean
+
+    result = scipy_bootstrap(
+        (values,),
+        np.mean,
+        n_resamples=n_resamples,
+        confidence_level=1 - alpha,
+        method="percentile",
+        rng=np.random.default_rng(random_state),
+    )
+    ci_low = float(result.confidence_interval.low)
+    ci_high = float(result.confidence_interval.high)
     return ci_low, ci_high
 
 
@@ -510,6 +541,13 @@ def _require_estimator_classes(
     *,
     expected_size: int,
 ) -> NDArray[np.generic]:
+    if isinstance(estimator, BaseEstimator):
+        try:
+            check_is_fitted(estimator, attributes=["classes_"])
+        except Exception:
+            # Best-effort only: fall back to explicit classes_ checks below.
+            pass
+
     estimator_classes_raw = getattr(estimator, "classes_", None)
     if estimator_classes_raw is None:
         raise ValidationError(

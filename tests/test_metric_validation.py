@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+from sklearn.base import BaseEstimator
 from sklearn.datasets import make_classification
 from sklearn.svm import LinearSVC
 
@@ -259,3 +260,43 @@ def test_class_dependent_metrics_require_estimator_classes_metadata(tmp_path) ->
 
     with pytest.raises(ValidationError, match="must expose classes_"):
         harness.evaluate()
+
+
+class _BrokenTagsProbaEstimator(BaseEstimator):
+    def __sklearn_tags__(self) -> object:
+        raise AttributeError("legacy tag implementation issue")
+
+    def fit(self, X: object, y: object) -> "_BrokenTagsProbaEstimator":
+        self.classes_ = np.array([0, 1], dtype=int)
+        return self
+
+    def predict(self, X: object) -> np.ndarray:
+        assert isinstance(X, np.ndarray)
+        return (X[:, 0] > 0).astype(int)
+
+    def predict_proba(self, X: object) -> np.ndarray:
+        assert isinstance(X, np.ndarray)
+        p_positive = np.where(X[:, 0] > 0, 0.95, 0.05)
+        return np.column_stack([1.0 - p_positive, p_positive])
+
+
+def test_class_dependent_metrics_ignore_broken_sklearn_tag_introspection(
+    tmp_path,
+) -> None:
+    X = np.linspace(-1.0, 1.0, 100).reshape(-1, 1)
+    y = (X[:, 0] > 0).astype(int)
+
+    report = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("binary_classification")
+        .compare(("broken_tags", _BrokenTagsProbaEstimator()))
+        .metrics("roc_auc", "log_loss")
+        .design(cv=5, random_state=42)
+        .fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+        .evaluate()
+    )
+
+    metrics = report.models[0].metrics
+    assert metrics["roc_auc"].point_estimate > 0.9
+    assert metrics["log_loss"].point_estimate < 0.25

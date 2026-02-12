@@ -57,6 +57,56 @@ def test_data_rejects_zero_feature_matrix() -> None:
         ExperimentalHarness().data(X, y)
 
 
+def test_data_rejects_non_1d_targets() -> None:
+    X = np.arange(12).reshape(6, 2)
+    y = np.array([[0], [1], [0], [1], [0], [1]])
+    with pytest.raises(ValidationError, match="one-dimensional array-like"):
+        ExperimentalHarness().data(X, y)
+
+
+def test_data_accepts_nan_values() -> None:
+    X = np.array(
+        [
+            [0.1, np.nan],
+            [0.3, 1.2],
+            [0.5, np.nan],
+            [0.7, 1.0],
+        ],
+        dtype=float,
+    )
+    y = np.array([0, 1, 0, 1], dtype=int)
+
+    harness = ExperimentalHarness().data(X, y)
+    assert harness is not None
+
+
+def test_data_wraps_check_xy_typeerror_as_validationerror(monkeypatch) -> None:
+    def _raise_typeerror(*args: object, **kwargs: object) -> tuple[object, object]:
+        raise TypeError("simulated type problem")
+
+    monkeypatch.setattr("statbelt.harness.check_X_y", _raise_typeerror)
+    X = np.array([[0.1], [0.2], [0.3]], dtype=float)
+    y = np.array([0, 1, 0], dtype=int)
+
+    with pytest.raises(ValidationError, match="simulated type problem"):
+        ExperimentalHarness().data(X, y)
+
+
+def test_fasten_rejects_non_binary_targets(tmp_path) -> None:
+    X = np.arange(30, dtype=float).reshape(15, 2)
+    y = np.array([0, 1, 2] * 5)
+    harness = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("binary_classification")
+        .compare(("logreg", LogisticRegression(max_iter=300)))
+        .metrics("accuracy")
+    )
+
+    with pytest.raises(ValidationError, match="exactly two classes"):
+        harness.fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+
+
 def test_design_rejects_none_random_state() -> None:
     with pytest.raises(ValidationError, match="random_state must be an integer"):
         ExperimentalHarness().design(random_state=None)  # type: ignore[arg-type]
@@ -81,6 +131,13 @@ def test_inference_rejects_non_integer_bootstrap_resamples() -> None:
         ExperimentalHarness().inference(bootstrap_resamples=2.5)  # type: ignore[arg-type]
     with pytest.raises(ValidationError, match="bootstrap_resamples must be an integer"):
         ExperimentalHarness().inference(bootstrap_resamples=True)  # type: ignore[arg-type]
+
+
+def test_inference_rejects_bootstrap_resamples_below_two() -> None:
+    with pytest.raises(ValidationError, match="bootstrap_resamples must be at least 2"):
+        ExperimentalHarness().inference(bootstrap_resamples=1)
+    with pytest.raises(ValidationError, match="bootstrap_resamples must be at least 2"):
+        ExperimentalHarness().inference(bootstrap_resamples=0)
 
 
 def test_inference_rejects_non_numeric_alpha() -> None:
