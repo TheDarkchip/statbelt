@@ -89,3 +89,8 @@ uv run pytest
 - Binary classification only.
 - Confidence intervals only (no pairwise hypothesis tests yet).
 - Python API is the primary surface in v0; CLI remains minimal.
+
+## License
+
+This project is licensed under the GNU Affero General Public License, version 3
+or later (`AGPL-3.0-or-later`). See `LICENSE`.
