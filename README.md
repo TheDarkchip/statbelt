@@ -81,18 +81,6 @@ Validation is fail-fast. For example:
 - `log_loss` requires `predict_proba`.
 - `roc_auc` requires `predict_proba` or `decision_function`.
 
-## CLI Smoke Check
-
-```bash
-statbelt
-```
-
-Expected output:
-
-```text
-Hello from statbelt!
-```
-
 ## Development
 
 ```bash
@@ -107,7 +95,7 @@ For release operations (tagging, TestPyPI gate, PyPI publish), see `RELEASING.md
 
 - Binary classification only.
 - Confidence intervals only (no pairwise hypothesis tests yet).
-- Python API is the primary surface in v0; CLI remains intentionally minimal.
+- Python API is the only supported interface in v0.
 
 ## License
 

@@ -108,8 +108,6 @@ jobs:
             "statbelt==${{ needs.build.outputs.package_version }}"
       - name: Smoke test import
         run: python -c "import statbelt; print(statbelt.__all__)"
-      - name: Smoke test CLI
-        run: statbelt
 
   publish_pypi:
     name: Publish to PyPI

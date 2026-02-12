@@ -2,7 +2,7 @@
 
 This project publishes with GitHub Actions Trusted Publishing:
 
-- Trigger: push a tag matching `v*` (for example, `v0.1.0`)
+- Trigger: push a tag matching `v*` (for example, `v0.1.1`)
 - Gate: publish to TestPyPI first, verify install, then publish to PyPI
 - Auth: PyPI OIDC trusted publisher (no long-lived API token)
 
@@ -30,13 +30,13 @@ uvx twine check dist/*
 
 ## Release Steps
 
-1. Ensure `pyproject.toml` has the intended version (for example, `0.1.0`).
+1. Ensure `pyproject.toml` has the intended version (for example, `0.1.1`).
 2. Commit all changes.
 3. Create and push a tag:
 
 ```bash
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "Release v0.1.1"
+git push origin v0.1.1
 ```
 
 4. Watch the `release` workflow in GitHub Actions:
@@ -51,13 +51,12 @@ git push origin v0.1.0
 python -m venv /tmp/statbelt-release-check
 source /tmp/statbelt-release-check/bin/activate
 python -m pip install --upgrade pip
-python -m pip install statbelt==0.1.0
+python -m pip install statbelt==0.1.1
 python -c "import statbelt; print(statbelt.__all__)"
-statbelt
 deactivate
 ```
 
 ## If Something Fails
 
 - If failure happens before PyPI publish, fix and push a new tag with a bumped version.
-- If PyPI publish already happened, do not overwrite files; cut a new release (for example, `0.1.1`).
+- If PyPI publish already happened, do not overwrite files; cut a new release (for example, `0.1.2`).
