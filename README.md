@@ -28,20 +28,23 @@ uv sync --all-groups
 ## Quick Start
 
 ```python
-from sklearn.datasets import make_classification
+from sklearn.datasets import load_breast_cancer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 from statbelt import ExperimentalHarness
 
-X, y = make_classification(n_samples=120, random_state=21)
+dataset = load_breast_cancer()
+X, y = dataset.data, dataset.target
 
 report = (
     ExperimentalHarness()
     .data(X, y)
     .task("binary_classification")
     .compare(
-        ("logreg", LogisticRegression(max_iter=500)),
-        ("rf", RandomForestClassifier(n_estimators=25, random_state=21)),
+        ("logreg", make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))),
+        ("rf", RandomForestClassifier(n_estimators=100, random_state=21)),
     )
     .metrics("accuracy", "roc_auc", "log_loss")
     .design(cv=5, random_state=42)
@@ -51,6 +54,25 @@ report = (
 )
 
 print(report.summary())
+```
+
+Sample output:
+
+```text
+Task: binary_classification
+CV folds: 5
+Bootstrap resamples: 2000
+Confidence interval: 95%
+
+Model: logreg
+  accuracy: 0.9737 (CI 0.9596, 0.9877)
+  roc_auc: 0.9953 (CI 0.9902, 0.9990)
+  log_loss: 0.0764 (CI 0.0515, 0.1061)
+
+Model: rf
+  accuracy: 0.9561 (CI 0.9509, 0.9613)
+  roc_auc: 0.9896 (CI 0.9832, 0.9951)
+  log_loss: 0.1769 (CI 0.1061, 0.3037)
 ```
 
 ## Core Features
