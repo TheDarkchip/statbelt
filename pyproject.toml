@@ -1,6 +1,6 @@
 [project]
 name = "statbelt"
-version = "0.1.1"
+version = "0.1.2"
 description = "A strict experimental harness for reproducible, statistically valid model evaluation."
 readme = "README.md"
 authors = [
