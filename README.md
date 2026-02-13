@@ -71,14 +71,22 @@ Bootstrap resamples: 2000
 Confidence interval: 95%
 
 Model: logreg
-  accuracy: 0.9737 (CI 0.9596, 0.9877)
-  roc_auc: 0.9953 (CI 0.9902, 0.9990)
-  log_loss: 0.0764 (CI 0.0515, 0.1061)
+  accuracy: 0.9754 (CI 0.9666, 0.9833)
+  roc_auc: 0.9948 (CI 0.9913, 0.9976)
+  log_loss: 0.0775 (CI 0.0603, 0.0975)
 
 Model: rf
-  accuracy: 0.9561 (CI 0.9509, 0.9613)
-  roc_auc: 0.9896 (CI 0.9832, 0.9951)
-  log_loss: 0.1769 (CI 0.1061, 0.3037)
+  accuracy: 0.9596 (CI 0.9526, 0.9666)
+  roc_auc: 0.9903 (CI 0.9860, 0.9941)
+  log_loss: 0.1478 (CI 0.1066, 0.2145)
+
+Pairwise comparisons:
+  logreg - rf [accuracy]: 0.0158 (CI 0.0070, 0.0255), p_adj=0.002999, reject, practical
+  logreg - rf [roc_auc]: 0.0045 (CI 0.0002, 0.0098), p_adj=0.03898, reject, practical
+  logreg - rf [log_loss]: -0.0703 (CI -0.1396, -0.0245), p_adj=0.002999, reject, practical
+
+Guardrails: FAIL
+  rf vs logreg [accuracy]: FAIL (min 0.0020, CI -0.0263, -0.0070)
 ```
 
 When pairwise inference and guardrails are configured, `summary()` also includes
