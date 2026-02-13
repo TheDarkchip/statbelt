@@ -81,6 +81,9 @@ Model: rf
   log_loss: 0.1769 (CI 0.1061, 0.3037)
 ```
 
+When pairwise inference and guardrails are configured, `summary()` also includes
+pairwise comparison lines and an overall guardrail pass/fail section.
+
 ## Core Features
 
 - `ExperimentalHarness` builder-style API for binary classification comparisons.
@@ -92,6 +95,112 @@ Model: rf
 - Machine-readable exports via `EvaluationReport.to_json()` and `.to_dataframe()`.
 - Lock artifact output (`statbelt.lock.json`) with config and split indices.
 - Strict staged workflow: configure -> `fasten()` -> `evaluate()`.
+
+## Inference Configuration
+
+Use pairwise inference to compare models directly:
+
+```python
+.compare_inference(method="paired_bootstrap", alternative="two-sided")
+```
+
+Supported values:
+
+- `method`: `paired_bootstrap`, `permutation`
+- `alternative`: `two-sided`, `greater`, `less`
+
+How to choose `alternative`:
+
+- `two-sided`: use when you only care whether A and B differ.
+- `greater`: use when your question is “is A better than B?”
+- `less`: use when your question is “is A worse than B?”
+
+How to choose `method`:
+
+- `paired_bootstrap`: default practical choice for CI + p-value style comparison.
+- `permutation`: exact paired-randomization style null test over fold deltas.
+
+Interpretation details:
+
+- Pairwise rows are always `model_a` vs `model_b`; A/B come from `compare(...)` order.
+- `delta` in the report is raw metric-space `model_a - model_b`.
+- One-sided p-values are metric-direction normalized, so `greater`/`less` keep the same
+  meaning across mixed metrics (for example, both `accuracy` and `log_loss`).
+
+Quick example:
+
+```python
+report = (
+    ExperimentalHarness()
+    .data(X, y)
+    .task("binary_classification")
+    .compare(("candidate", candidate_model), ("baseline", baseline_model))
+    .metrics("accuracy", "log_loss")
+    .compare_inference(method="paired_bootstrap", alternative="greater")
+    .fasten()
+    .evaluate()
+)
+# Here, p-values answer: \"is candidate better than baseline?\"
+```
+
+Control multiple testing with:
+
+```python
+.multiplicity(method="holm", family="global")
+```
+
+Supported values:
+
+- `method`: `holm`, `bonferroni`, `fdr_bh`
+- `family`: `global`, `per_metric`
+
+## Practical Significance and Guardrails
+
+Practical thresholds:
+
+```python
+.practical_significance(accuracy=0.005, log_loss=0.01)
+```
+
+Guardrails against a baseline:
+
+```python
+.baseline("logreg")
+.guardrails(min_improvement={"accuracy": 0.002}, confidence=0.95)
+```
+
+Rules:
+
+- Threshold values must be finite and non-negative.
+- Guardrails require `baseline(...)`.
+- Guardrail metrics must also be included in `.metrics(...)`.
+
+## Report and Export API
+
+`evaluate()` returns an `EvaluationReport` with:
+
+- `models`: per-model metric intervals
+- `pairwise`: pairwise deltas, CIs, raw/adjusted p-values, practical-significance flags
+- `guardrails`: per-check pass/fail and aggregate `overall_pass`
+- `splits` and `split_metadata`: deterministic split definitions
+
+Export helpers:
+
+```python
+report.to_json("report.json")
+report.to_dataframe(kind="models")
+report.to_dataframe(kind="pairwise")
+```
+
+## Lockfile Schema
+
+`fasten()` writes schema version `2` lockfiles, including:
+
+- design: `cv`, `cv_repeats`, `random_state`
+- inference config: `alpha`, `bootstrap_resamples`, `pairwise_inference`
+- multiplicity config
+- practical-significance and guardrail config
+- split indices with repeat/fold metadata
 
 ## Supported Task and Metrics
 

@@ -200,6 +200,25 @@ class ExperimentalHarness:
         method: str = "paired_bootstrap",
         alternative: str = "two-sided",
     ) -> Self:
+        """Configure pairwise model-comparison inference.
+
+        Parameters:
+            method:
+                - ``paired_bootstrap``: bootstrap over fold-level paired deltas.
+                - ``permutation``: paired permutation test over fold-level deltas.
+            alternative:
+                - ``two-sided``: model A differs from model B.
+                - ``greater``: model A is better than model B.
+                - ``less``: model A is worse than model B.
+
+        Notes:
+            - Pairwise records are emitted as model A vs model B where A/B come from
+              the order passed to ``compare(...)``.
+            - The reported ``delta`` remains raw metric-space ``model_a - model_b``.
+            - One-sided p-values are direction-normalized by metric orientation, so
+              ``greater``/``less`` keep the same meaning across mixed metrics
+              (for example, ``accuracy`` and ``log_loss``).
+        """
         self._ensure_configuring()
         if not isinstance(method, str):
             raise ValidationError("compare_inference method must be a string.")
