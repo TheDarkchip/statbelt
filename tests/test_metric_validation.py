@@ -230,6 +230,41 @@ def test_1d_predict_proba_respects_estimator_class_ordering(tmp_path) -> None:
     assert metrics["log_loss"].point_estimate < 0.05
 
 
+class _ReversedSingleColumnProbaEstimator:
+    def fit(self, X: object, y: object) -> "_ReversedSingleColumnProbaEstimator":
+        self.classes_ = np.array([1, 0], dtype=int)
+        return self
+
+    def predict(self, X: object) -> np.ndarray:
+        assert isinstance(X, np.ndarray)
+        return (X[:, 0] > 0).astype(int)
+
+    def predict_proba(self, X: object) -> np.ndarray:
+        assert isinstance(X, np.ndarray)
+        # Single-column output represents P(classes_[1]) = P(class 0).
+        return np.where(X[:, 0] > 0, 0.01, 0.99).reshape(-1, 1)
+
+
+def test_single_column_predict_proba_respects_estimator_class_ordering(tmp_path) -> None:
+    X = np.linspace(-1.0, 1.0, 100).reshape(-1, 1)
+    y = (X[:, 0] > 0).astype(int)
+
+    report = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("binary_classification")
+        .compare(("reversed_single_col_proba", _ReversedSingleColumnProbaEstimator()))
+        .metrics("roc_auc", "log_loss")
+        .design(cv=5, random_state=42)
+        .fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+        .evaluate()
+    )
+
+    metrics = report.models[0].metrics
+    assert metrics["roc_auc"].point_estimate > 0.95
+    assert metrics["log_loss"].point_estimate < 0.05
+
+
 class _NoClassesProbaEstimator:
     def fit(self, X: object, y: object) -> "_NoClassesProbaEstimator":
         return self

@@ -10,6 +10,7 @@ from typing import Self
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.sparse import issparse, spmatrix
 from scipy.stats import (
     bootstrap as scipy_bootstrap,
     false_discovery_control as scipy_false_discovery_control,
@@ -53,7 +54,7 @@ class ExperimentalHarness:
     _MULTIPLICITY_FAMILIES = {"global", "per_metric"}
 
     def __init__(self) -> None:
-        self._X: NDArray[np.generic] | None = None
+        self._X: NDArray[np.generic] | spmatrix | None = None
         self._y: NDArray[np.generic] | None = None
         self._task: str | None = None
         self._models: list[tuple[str, object]] = []
@@ -78,22 +79,28 @@ class ExperimentalHarness:
 
     def data(self, X: object, y: object) -> Self:
         self._ensure_configuring()
-        X_array = np.asarray(X)
         y_array = np.asarray(y)
-        if X_array.ndim == 1:
-            X_array = X_array.reshape(-1, 1)
         if y_array.ndim != 1:
             raise ValidationError("y must be a one-dimensional array-like.")
 
+        if issparse(X):
+            X_features: object = X
+        else:
+            X_array = np.asarray(X)
+            if X_array.ndim == 1:
+                X_array = X_array.reshape(-1, 1)
+            X_features = X_array
+
         try:
             validated_X, validated_y = check_X_y(
-                X_array,
+                X_features,
                 y_array,
                 dtype=None,
                 ensure_all_finite="allow-nan",
                 ensure_min_samples=2,
                 ensure_min_features=1,
                 multi_output=False,
+                accept_sparse="csr",
             )
         except (TypeError, ValueError) as exc:
             message = str(exc)
@@ -107,7 +114,7 @@ class ExperimentalHarness:
                 raise ValidationError("At least two samples are required.") from exc
             raise ValidationError(message) from exc
 
-        self._X = np.asarray(validated_X)
+        self._X = validated_X
         self._y = np.asarray(validated_y)
         return self
 
@@ -806,10 +813,12 @@ class ExperimentalHarness:
             for model_name, estimator in self._models
         ]
 
-    def _snapshot_data(self) -> tuple[NDArray[np.generic], NDArray[np.generic]]:
+    def _snapshot_data(
+        self,
+    ) -> tuple[NDArray[np.generic] | spmatrix, NDArray[np.generic]]:
         assert self._X is not None
         assert self._y is not None
-        return np.array(self._X, copy=True), np.array(self._y, copy=True)
+        return _copy_feature_matrix(self._X), np.array(self._y, copy=True)
 
 
 def _align_probability_columns(
@@ -819,19 +828,18 @@ def _align_probability_columns(
     class_labels: NDArray[np.generic],
 ) -> NDArray[np.float64]:
     if y_proba.ndim == 1:
-        if class_labels.size != 2:
-            raise ValidationError(
-                "1D predict_proba output is only supported for binary classification."
-            )
-        estimator_classes = _require_estimator_classes(estimator, expected_size=2)
-
-        probability_class = estimator_classes[1]
-        if probability_class == class_labels[1]:
-            return np.column_stack([1 - y_proba, y_proba])
-        if probability_class == class_labels[0]:
-            return np.column_stack([y_proba, 1 - y_proba])
-        raise ValidationError(
-            "Could not map 1D predict_proba output to dataset class labels."
+        return _align_binary_probability_vector(
+            estimator=estimator,
+            probability_values=y_proba,
+            class_labels=class_labels,
+            source="1D",
+        )
+    if y_proba.ndim == 2 and y_proba.shape[1] == 1:
+        return _align_binary_probability_vector(
+            estimator=estimator,
+            probability_values=y_proba[:, 0],
+            class_labels=class_labels,
+            source="single-column",
         )
     if y_proba.ndim != 2:
         raise ValidationError("predict_proba output must be a 1D or 2D array.")
@@ -883,6 +891,28 @@ def _bootstrap_mean_interval(
     ci_low = float(result.confidence_interval.low)
     ci_high = float(result.confidence_interval.high)
     return ci_low, ci_high
+
+
+def _align_binary_probability_vector(
+    *,
+    estimator: object,
+    probability_values: NDArray[np.float64],
+    class_labels: NDArray[np.generic],
+    source: str,
+) -> NDArray[np.float64]:
+    if class_labels.size != 2:
+        raise ValidationError(
+            f"{source} predict_proba output is only supported for binary classification."
+        )
+    estimator_classes = _require_estimator_classes(estimator, expected_size=2)
+    probability_class = estimator_classes[1]
+    if probability_class == class_labels[1]:
+        return np.column_stack([1 - probability_values, probability_values])
+    if probability_class == class_labels[0]:
+        return np.column_stack([probability_values, 1 - probability_values])
+    raise ValidationError(
+        f"Could not map {source} predict_proba output to dataset class labels."
+    )
 
 
 def _derive_seed(base_seed: int, *, model_index: int, metric_index: int) -> int:
@@ -1055,3 +1085,9 @@ def _copy_splits(
     splits: list[tuple[list[int], list[int]]],
 ) -> list[tuple[list[int], list[int]]]:
     return [(train.copy(), test.copy()) for train, test in splits]
+
+
+def _copy_feature_matrix(
+    X: NDArray[np.generic] | spmatrix,
+) -> NDArray[np.generic] | spmatrix:
+    return X.copy()

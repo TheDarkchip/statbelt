@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+from scipy import sparse
 from sklearn.datasets import make_classification
 from sklearn.linear_model import LogisticRegression
 
@@ -116,6 +117,24 @@ def test_data_accepts_nan_values() -> None:
 
     harness = ExperimentalHarness().data(X, y)
     assert harness is not None
+
+
+def test_data_accepts_sparse_feature_matrices(tmp_path) -> None:
+    X, y = _binary_data()
+    # Use COO input to verify .data() normalizes to an indexable sparse format.
+    X_sparse = sparse.coo_matrix(X)
+
+    report = (
+        ExperimentalHarness()
+        .data(X_sparse, y)
+        .task("binary_classification")
+        .compare(("logreg", LogisticRegression(max_iter=300)))
+        .metrics("accuracy")
+        .fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+        .evaluate()
+    )
+
+    assert report.models[0].metrics["accuracy"].point_estimate >= 0.0
 
 
 def test_data_wraps_check_xy_typeerror_as_validationerror(monkeypatch) -> None:
