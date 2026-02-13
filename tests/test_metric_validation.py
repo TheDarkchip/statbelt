@@ -300,3 +300,37 @@ def test_class_dependent_metrics_ignore_broken_sklearn_tag_introspection(
     metrics = report.models[0].metrics
     assert metrics["roc_auc"].point_estimate > 0.9
     assert metrics["log_loss"].point_estimate < 0.25
+
+
+class _WrongColumnsProbaEstimator:
+    def fit(self, X: object, y: object) -> "_WrongColumnsProbaEstimator":
+        self.classes_ = np.array([0, 1, 2], dtype=int)
+        return self
+
+    def predict(self, X: object) -> np.ndarray:
+        assert isinstance(X, np.ndarray)
+        return (X[:, 0] > 0).astype(int)
+
+    def predict_proba(self, X: object) -> np.ndarray:
+        assert isinstance(X, np.ndarray)
+        # Invalid for binary data: three columns instead of two.
+        p = np.where(X[:, 0] > 0, 0.9, 0.1)
+        return np.column_stack([1.0 - p, p, np.zeros_like(p)])
+
+
+def test_predict_proba_columns_must_match_dataset_classes(tmp_path) -> None:
+    X = np.linspace(-1.0, 1.0, 80).reshape(-1, 1)
+    y = (X[:, 0] > 0).astype(int)
+
+    harness = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("binary_classification")
+        .compare(("wrong_cols", _WrongColumnsProbaEstimator()))
+        .metrics("log_loss")
+        .design(cv=5, random_state=42)
+        .fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+    )
+
+    with pytest.raises(ValidationError, match="one column per dataset class"):
+        harness.evaluate()

@@ -47,8 +47,13 @@ report = (
         ("rf", RandomForestClassifier(n_estimators=100, random_state=21)),
     )
     .metrics("accuracy", "roc_auc", "log_loss")
-    .design(cv=5, random_state=42)
+    .design(cv=5, cv_repeats=2, random_state=42)
     .inference(alpha=0.05, bootstrap_resamples=2000)
+    .compare_inference(method="paired_bootstrap", alternative="two-sided")
+    .multiplicity(method="holm", family="global")
+    .practical_significance(accuracy=0.005, roc_auc=0.002, log_loss=0.01)
+    .baseline("logreg")
+    .guardrails(min_improvement={"accuracy": 0.002}, confidence=0.95)
     .fasten("statbelt.lock.json")
     .evaluate()
 )
@@ -61,6 +66,7 @@ Sample output:
 ```text
 Task: binary_classification
 CV folds: 5
+CV repeats: 2
 Bootstrap resamples: 2000
 Confidence interval: 95%
 
@@ -78,8 +84,12 @@ Model: rf
 ## Core Features
 
 - `ExperimentalHarness` builder-style API for binary classification comparisons.
-- Deterministic stratified k-fold evaluation with shared folds across models.
+- Deterministic repeated stratified k-fold evaluation with shared folds across models.
 - Bootstrap confidence intervals over fold-level metrics.
+- Pairwise model inference with paired bootstrap/permutation p-values.
+- Multiple-comparison correction (`holm`, `bonferroni`, `fdr_bh`).
+- Practical-significance thresholds and baseline guardrail checks.
+- Machine-readable exports via `EvaluationReport.to_json()` and `.to_dataframe()`.
 - Lock artifact output (`statbelt.lock.json`) with config and split indices.
 - Strict staged workflow: configure -> `fasten()` -> `evaluate()`.
 
@@ -116,7 +126,6 @@ For release operations (tagging, TestPyPI gate, PyPI publish), see `RELEASING.md
 ## Current Limits
 
 - Binary classification only.
-- Confidence intervals only (no pairwise hypothesis tests yet).
 
 ## License
 

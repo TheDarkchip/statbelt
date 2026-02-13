@@ -22,18 +22,21 @@ MetricRequirement = Literal["pred", "score", "proba"]
 @dataclass(frozen=True)
 class MetricSpec:
     requirement: MetricRequirement
+    higher_is_better: bool
     scorer: Callable[[NDArray[np.generic], NDArray[np.generic], object | None], float]
 
 
 METRIC_REGISTRY: dict[str, MetricSpec] = {
     "accuracy": MetricSpec(
         requirement="pred",
+        higher_is_better=True,
         scorer=lambda y_true, y_pred, _positive_label: float(
             accuracy_score(y_true, y_pred)
         ),
     ),
     "precision": MetricSpec(
         requirement="pred",
+        higher_is_better=True,
         scorer=lambda y_true, y_pred, positive_label: float(
             precision_score(
                 y_true, y_pred, pos_label=positive_label, zero_division=0
@@ -42,22 +45,26 @@ METRIC_REGISTRY: dict[str, MetricSpec] = {
     ),
     "recall": MetricSpec(
         requirement="pred",
+        higher_is_better=True,
         scorer=lambda y_true, y_pred, positive_label: float(
             recall_score(y_true, y_pred, pos_label=positive_label, zero_division=0)
         ),
     ),
     "f1": MetricSpec(
         requirement="pred",
+        higher_is_better=True,
         scorer=lambda y_true, y_pred, positive_label: float(
             f1_score(y_true, y_pred, pos_label=positive_label, zero_division=0)
         ),
     ),
     "roc_auc": MetricSpec(
         requirement="score",
+        higher_is_better=True,
         scorer=lambda y_true, y_score, _positive_label: float(roc_auc_score(y_true, y_score)),
     ),
     "log_loss": MetricSpec(
         requirement="proba",
+        higher_is_better=False,
         scorer=lambda y_true, y_proba, _positive_label: float(
             sklearn_log_loss(y_true, y_proba)
         ),
@@ -95,6 +102,10 @@ def metric_requires_score(metric_name: str) -> bool:
 
 def metric_requires_probability(metric_name: str) -> bool:
     return METRIC_REGISTRY[metric_name].requirement == "proba"
+
+
+def metric_higher_is_better(metric_name: str) -> bool:
+    return METRIC_REGISTRY[metric_name].higher_is_better
 
 
 def validate_estimator_for_metrics(

@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-from statbelt.harness import _bootstrap_mean_interval
+from statbelt.harness import _bootstrap_mean_interval, _derive_pairwise_seed
 
 
 def test_bootstrap_interval_is_deterministic_for_seed() -> None:
@@ -48,3 +48,39 @@ def test_bootstrap_interval_is_finite_and_ordered() -> None:
     assert math.isfinite(ci_high)
     assert ci_low <= ci_high
 
+
+def test_pairwise_seed_is_unique_across_many_model_pairs() -> None:
+    base_seed = 42
+    metric_index = 0
+    num_models = 130
+
+    seeds = {
+        _derive_pairwise_seed(
+            base_seed,
+            first_index=first_index,
+            second_index=second_index,
+            metric_index=metric_index,
+        )
+        for first_index in range(num_models)
+        for second_index in range(first_index + 1, num_models)
+    }
+
+    expected_pairs = num_models * (num_models - 1) // 2
+    assert len(seeds) == expected_pairs
+
+
+def test_pairwise_seed_changes_with_metric_index() -> None:
+    seed_a = _derive_pairwise_seed(
+        42,
+        first_index=0,
+        second_index=99,
+        metric_index=0,
+    )
+    seed_b = _derive_pairwise_seed(
+        42,
+        first_index=0,
+        second_index=99,
+        metric_index=1,
+    )
+
+    assert seed_a != seed_b

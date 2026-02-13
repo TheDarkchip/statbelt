@@ -30,6 +30,44 @@ def test_fasten_requires_complete_configuration() -> None:
         harness.fasten()
 
 
+def test_fasten_requires_data_configuration() -> None:
+    harness = (
+        ExperimentalHarness()
+        .task("binary_classification")
+        .compare(("logreg", LogisticRegression(max_iter=300)))
+        .metrics("accuracy")
+    )
+
+    with pytest.raises(ConfigurationError, match="data\\(X, y\\)"):
+        harness.fasten()
+
+
+def test_fasten_requires_task_configuration() -> None:
+    X, y = _binary_data()
+    harness = (
+        ExperimentalHarness()
+        .data(X, y)
+        .compare(("logreg", LogisticRegression(max_iter=300)))
+        .metrics("accuracy")
+    )
+
+    with pytest.raises(ConfigurationError, match="task"):
+        harness.fasten()
+
+
+def test_fasten_requires_metrics_configuration() -> None:
+    X, y = _binary_data()
+    harness = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("binary_classification")
+        .compare(("logreg", LogisticRegression(max_iter=300)))
+    )
+
+    with pytest.raises(ConfigurationError, match="metrics"):
+        harness.fasten()
+
+
 def test_configuration_is_immutable_after_fasten(tmp_path) -> None:
     X, y = _binary_data()
     harness = (
