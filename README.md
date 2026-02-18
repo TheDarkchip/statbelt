@@ -3,6 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/statbelt.svg)](https://pypi.org/project/statbelt/)
 [![Python versions](https://img.shields.io/pypi/pyversions/statbelt.svg)](https://pypi.org/project/statbelt/)
 [![License](https://img.shields.io/pypi/l/statbelt.svg)](LICENSE)
+[![CI workflow](https://github.com/TheDarkchip/statbelt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheDarkchip/statbelt/actions/workflows/ci.yml)
 [![Release workflow](https://github.com/TheDarkchip/statbelt/actions/workflows/release.yml/badge.svg)](https://github.com/TheDarkchip/statbelt/actions/workflows/release.yml)
 
 `statbelt` is a strict experimental harness for reproducible, statistically aware
