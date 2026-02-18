@@ -39,6 +39,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.148.2",
     "pytest>=9.0.2",
     "pytest-cov>=6.2.1",
     "ruff>=0.15.0",

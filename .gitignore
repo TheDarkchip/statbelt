@@ -8,6 +8,7 @@ wheels/
 .coverage
 .coverage.*
 htmlcov/
+.hypothesis/
 
 # Virtual environments
 .venv
