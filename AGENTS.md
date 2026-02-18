@@ -2,17 +2,17 @@
 
 ## Project Structure & Module Organization
 
-- `src/statbelt/` contains the Python package. The current CLI entrypoint is `src/statbelt/__init__.py` via `main()`.
-- `pyproject.toml` defines project metadata, dependencies, and the `statbelt` console script.
+- `src/statbelt/` contains the Python package; `src/statbelt/__init__.py` currently exports `ExperimentalHarness`.
+- `pyproject.toml` defines project metadata and dependencies.
 - `README.md` describes project goals and current status.
 - `uv.lock` pins resolved dependency versions for reproducible environments.
-- Add tests under `tests/`, mirroring package areas (for example, `tests/test_cli.py`).
+- Add tests under `tests/`, mirroring package areas (for example, `tests/test_harness_flow.py`).
 
 ## Build, Test, and Development Commands
 
 - `uv sync` installs runtime dependencies.
 - `uv sync --all-groups` installs runtime + dev dependencies (`pytest`, `ruff`).
-- `uv run statbelt` runs the CLI smoke test (currently prints `Hello from statbelt!`).
+- `uv run python -c "from statbelt import ExperimentalHarness"` runs a package import smoke test.
 - `uv run ruff check .` runs linting.
 - `uv run pytest` runs the test suite.
 - `uv build` (optional) builds source/wheel distributions.
@@ -34,13 +34,13 @@
 
 ## Commit & Pull Request Guidelines
 
-- This repository currently has no commit history; adopt Conventional Commits going forward.
+- Use Conventional Commits for new history.
 - Example commit messages: `feat: add harness skeleton`, `fix: validate empty input`, `docs: clarify quick start`.
 - Keep commits atomic and logically scoped.
 - PRs should include: purpose, concise change summary, test evidence (commands run), and linked issues when applicable.
 
 ## Security & Configuration Tips
 
-- Target Python `>=3.13` as defined in `pyproject.toml`.
+- Target Python `>=3.11` as defined in `pyproject.toml`.
 - Do not commit secrets, API keys, or local environment files.
 - Keep dependencies minimal and update `uv.lock` when dependency definitions change.
