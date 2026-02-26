@@ -93,9 +93,44 @@ Guardrails: FAIL
 When pairwise inference and guardrails are configured, `summary()` also includes
 pairwise comparison lines and an overall guardrail pass/fail section.
 
+## Multiclass Quick Start
+
+```python
+from sklearn.datasets import load_iris
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from statbelt import ExperimentalHarness
+
+dataset = load_iris()
+X, y = dataset.data, dataset.target
+
+report = (
+    ExperimentalHarness()
+    .data(X, y)
+    .task("multiclass_classification")
+    .compare(
+        ("logreg", LogisticRegression(max_iter=1000)),
+        ("rf", RandomForestClassifier(n_estimators=200, random_state=42)),
+    )
+    .metrics(
+        "accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "roc_auc",
+        "log_loss",
+        "roc_auc_ovo_weighted",
+    )
+    .design(cv=5, random_state=42)
+    .inference(alpha=0.05, bootstrap_resamples=1000)
+    .fasten("statbelt.lock.json")
+    .evaluate()
+)
+```
+
 ## Core Features
 
-- `ExperimentalHarness` builder-style API for binary classification comparisons.
+- `ExperimentalHarness` builder-style API for binary and multiclass classification comparisons.
 - Deterministic repeated stratified k-fold evaluation with shared folds across models.
 - Bootstrap confidence intervals over fold-level metrics.
 - Pairwise model inference with paired bootstrap/permutation p-values.
@@ -203,7 +238,7 @@ report.to_dataframe(kind="pairwise")
 
 ## Lockfile Schema
 
-`fasten()` writes schema version `2` lockfiles, including:
+`fasten()` writes schema version `3` lockfiles, including:
 
 - design: `cv`, `cv_repeats`, `random_state`
 - inference config: `alpha`, `bootstrap_resamples`, `pairwise_inference`
@@ -213,11 +248,12 @@ report.to_dataframe(kind="pairwise")
 
 ## Supported Task and Metrics
 
-Supported task:
+Supported tasks:
 
 - `binary_classification`
+- `multiclass_classification`
 
-Supported metrics:
+Binary metrics:
 
 - `accuracy`
 - `precision`
@@ -226,10 +262,30 @@ Supported metrics:
 - `roc_auc`
 - `log_loss`
 
+Multiclass metrics:
+
+- `accuracy`
+- `precision_macro`, `precision_weighted`, `precision_micro`
+- `recall_macro`, `recall_weighted`, `recall_micro`
+- `f1_macro`, `f1_weighted`, `f1_micro`
+- `roc_auc_ovr_macro`, `roc_auc_ovr_weighted`
+- `roc_auc_ovo_macro`, `roc_auc_ovo_weighted`
+- `log_loss`
+
+Task-aware metric aliases:
+
+| Metric name | `binary_classification` | `multiclass_classification` |
+| --- | --- | --- |
+| `precision` | binary precision | `precision_macro` |
+| `recall` | binary recall | `recall_macro` |
+| `f1` | binary F1 | `f1_macro` |
+| `roc_auc` | binary ROC AUC | `roc_auc_ovr_macro` |
+
 Validation is fail-fast. For example:
 
 - `log_loss` requires `predict_proba`.
-- `roc_auc` requires `predict_proba` or `decision_function`.
+- binary `roc_auc` accepts `predict_proba` or `decision_function`.
+- multiclass ROC AUC metrics require `predict_proba`.
 
 ## Development
 
@@ -243,7 +299,7 @@ For release operations (tagging, TestPyPI gate, PyPI publish), see `RELEASING.md
 
 ## Current Limits
 
-- Binary classification only.
+- Classification tasks only (regression is not supported yet).
 
 ## License
 

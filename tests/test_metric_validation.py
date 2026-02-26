@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
 
 from statbelt import ExperimentalHarness
@@ -15,6 +16,18 @@ def _data() -> tuple[object, object]:
         n_informative=3,
         n_redundant=0,
         random_state=7,
+    )
+
+
+def _multiclass_data() -> tuple[object, object]:
+    return make_classification(
+        n_samples=180,
+        n_features=8,
+        n_informative=6,
+        n_redundant=0,
+        n_classes=3,
+        n_clusters_per_class=1,
+        random_state=18,
     )
 
 
@@ -369,3 +382,96 @@ def test_predict_proba_columns_must_match_dataset_classes(tmp_path) -> None:
 
     with pytest.raises(ValidationError, match="one column per dataset class"):
         harness.evaluate()
+
+
+def test_multiclass_alias_metrics_match_explicit_macro_metrics(tmp_path) -> None:
+    X, y = _multiclass_data()
+
+    alias_report = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("logreg", LogisticRegression(max_iter=500)))
+        .metrics("precision", "recall", "f1", "roc_auc")
+        .design(cv=3, random_state=8)
+        .fasten(lock_path=str(tmp_path / "alias.lock.json"))
+        .evaluate()
+    )
+
+    explicit_report = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("logreg", LogisticRegression(max_iter=500)))
+        .metrics("precision_macro", "recall_macro", "f1_macro", "roc_auc_ovr_macro")
+        .design(cv=3, random_state=8)
+        .fasten(lock_path=str(tmp_path / "explicit.lock.json"))
+        .evaluate()
+    )
+
+    alias_metrics = alias_report.models[0].metrics
+    explicit_metrics = explicit_report.models[0].metrics
+    assert set(alias_metrics) == {
+        "precision_macro",
+        "recall_macro",
+        "f1_macro",
+        "roc_auc_ovr_macro",
+    }
+    for metric_name in ("precision_macro", "recall_macro", "f1_macro", "roc_auc_ovr_macro"):
+        assert alias_metrics[metric_name].point_estimate == pytest.approx(
+            explicit_metrics[metric_name].point_estimate
+        )
+
+
+def test_multiclass_roc_auc_requires_predict_proba(tmp_path) -> None:
+    X, y = _multiclass_data()
+    harness = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("linear_svc", LinearSVC()))
+        .metrics("roc_auc")
+    )
+
+    with pytest.raises(ValidationError, match="predict_proba"):
+        harness.fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+
+
+class _ReorderedMulticlassProbaEstimator:
+    def fit(self, X: object, y: object) -> "_ReorderedMulticlassProbaEstimator":
+        self.classes_ = np.array([2, 0, 1], dtype=int)
+        return self
+
+    def predict(self, X: object) -> np.ndarray:
+        assert isinstance(X, np.ndarray)
+        thresholds = np.array([-0.33, 0.33], dtype=float)
+        return np.digitize(X[:, 0], thresholds)
+
+    def predict_proba(self, X: object) -> np.ndarray:
+        assert isinstance(X, np.ndarray)
+        predicted_labels = self.predict(X)
+        class_to_column = {2: 0, 0: 1, 1: 2}
+        probabilities = np.full((X.shape[0], 3), 0.05, dtype=float)
+        for row_idx, predicted_label in enumerate(predicted_labels):
+            probabilities[row_idx, class_to_column[int(predicted_label)]] = 0.9
+        return probabilities
+
+
+def test_multiclass_probability_alignment_respects_estimator_class_ordering(tmp_path) -> None:
+    X = np.linspace(-1.0, 1.0, 240).reshape(-1, 1)
+    y = np.digitize(X[:, 0], np.array([-0.33, 0.33], dtype=float))
+
+    report = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("reordered_proba", _ReorderedMulticlassProbaEstimator()))
+        .metrics("roc_auc_ovr_macro", "log_loss")
+        .design(cv=4, random_state=42)
+        .fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+        .evaluate()
+    )
+
+    metrics = report.models[0].metrics
+    assert metrics["roc_auc_ovr_macro"].point_estimate > 0.95
+    assert metrics["log_loss"].point_estimate < 0.3

@@ -18,6 +18,18 @@ def _binary_data() -> tuple[object, object]:
     )
 
 
+def _multiclass_data() -> tuple[object, object]:
+    return make_classification(
+        n_samples=120,
+        n_features=8,
+        n_informative=6,
+        n_redundant=0,
+        n_classes=3,
+        n_clusters_per_class=1,
+        random_state=321,
+    )
+
+
 def test_evaluate_requires_fasten() -> None:
     harness = ExperimentalHarness()
     with pytest.raises(StateError, match="fasten"):
@@ -85,8 +97,13 @@ def test_configuration_is_immutable_after_fasten(tmp_path) -> None:
 
 
 def test_invalid_task_name_raises() -> None:
-    with pytest.raises(ValidationError, match="binary_classification"):
+    with pytest.raises(ValidationError, match="Supported tasks"):
         ExperimentalHarness().task("regression")
+
+
+def test_multiclass_task_name_is_accepted() -> None:
+    harness = ExperimentalHarness().task("multiclass_classification")
+    assert harness is not None
 
 
 def test_data_rejects_zero_feature_matrix() -> None:
@@ -162,6 +179,37 @@ def test_fasten_rejects_non_binary_targets(tmp_path) -> None:
 
     with pytest.raises(ValidationError, match="exactly two classes"):
         harness.fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+
+
+def test_fasten_rejects_multiclass_task_with_binary_targets(tmp_path) -> None:
+    X, y = _binary_data()
+    harness = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("logreg", LogisticRegression(max_iter=300)))
+        .metrics("accuracy")
+    )
+
+    with pytest.raises(ValidationError, match="at least three classes"):
+        harness.fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+
+
+def test_fasten_accepts_multiclass_task_with_three_classes(tmp_path) -> None:
+    X, y = _multiclass_data()
+    report = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("logreg", LogisticRegression(max_iter=500)))
+        .metrics("accuracy", "precision")
+        .design(cv=3, random_state=11)
+        .fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+        .evaluate()
+    )
+
+    assert report.task == "multiclass_classification"
+    assert report.models[0].metrics["precision_macro"].point_estimate >= 0.0
 
 
 def test_design_rejects_none_random_state() -> None:

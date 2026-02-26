@@ -16,8 +16,15 @@ from statbelt.harness import (
     _positive_class_decision_score,
     _require_estimator_classes,
 )
-from statbelt.metrics import METRIC_REGISTRY, MetricSpec, compute_metric, validate_estimator_for_metrics
-from statbelt.metrics import validate_metric_names
+from statbelt.metrics import (
+    METRIC_REGISTRY,
+    MetricSpec,
+    _supported_metrics_for_task,
+    compute_metric,
+    resolve_metric_names,
+    validate_estimator_for_metrics,
+    validate_metric_names,
+)
 from statbelt.report import EvaluationReport, GuardrailCheck, GuardrailReport, MetricInterval, ModelReport
 
 
@@ -143,7 +150,7 @@ def test_fasten_rejects_when_task_internal_state_is_invalid(tmp_path) -> None:
     )
     harness._task = "regression"
 
-    with pytest.raises(ConfigurationError, match="Only 'binary_classification'"):
+    with pytest.raises(ConfigurationError, match="Unsupported task"):
         harness.fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
 
 
@@ -171,6 +178,35 @@ def test_fasten_maps_type_of_target_errors_to_validation_error(
 
     monkeypatch.setattr("statbelt.harness.type_of_target", _raise)
     with pytest.raises(ValidationError, match="requires exactly two classes"):
+        harness.fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+
+
+def test_fasten_maps_type_of_target_errors_for_multiclass(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    X, y = make_classification(
+        n_samples=90,
+        n_features=6,
+        n_informative=4,
+        n_redundant=0,
+        n_classes=3,
+        n_clusters_per_class=1,
+        random_state=17,
+    )
+    harness = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("logreg", LogisticRegression(max_iter=200)))
+        .metrics("accuracy")
+    )
+
+    def _raise(*args: object, **kwargs: object) -> str:
+        raise ValueError("target type error")
+
+    monkeypatch.setattr("statbelt.harness.type_of_target", _raise)
+    with pytest.raises(ValidationError, match="at least three classes"):
         harness.fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
 
 
@@ -440,6 +476,51 @@ def test_metrics_helper_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
         )
     finally:
         METRIC_REGISTRY.pop("dummy_proba_metric", None)
+
+
+def test_metric_resolution_helper_paths() -> None:
+    assert validate_metric_names(
+        ("precision", "roc_auc"),
+        task_name="multiclass_classification",
+    ) == ("precision_macro", "roc_auc_ovr_macro")
+
+    with pytest.raises(ValidationError, match="Unsupported metric"):
+        resolve_metric_names(("precision_macro",), task_name="binary_classification")
+
+    with pytest.raises(ValidationError, match="Unsupported metric"):
+        resolve_metric_names(("precision_binary",), task_name="multiclass_classification")
+
+    with pytest.raises(ValidationError, match="Duplicate metric"):
+        resolve_metric_names(("precision", "precision_macro"), task_name="multiclass_classification")
+
+    with pytest.raises(ValidationError, match="Unsupported task"):
+        resolve_metric_names(("accuracy",), task_name="regression")  # type: ignore[arg-type]
+
+    with pytest.raises(ValidationError, match="Unsupported task"):
+        _supported_metrics_for_task("regression")  # type: ignore[arg-type]
+
+
+def test_fasten_rejects_duplicate_thresholds_after_alias_resolution(tmp_path) -> None:
+    X, y = make_classification(
+        n_samples=120,
+        n_features=8,
+        n_informative=5,
+        n_redundant=0,
+        n_classes=3,
+        n_clusters_per_class=1,
+        random_state=22,
+    )
+    harness = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("logreg", LogisticRegression(max_iter=200)))
+        .metrics("precision_macro")
+        .practical_significance(precision=0.01, precision_macro=0.02)
+    )
+
+    with pytest.raises(ConfigurationError, match="duplicate thresholds after task-based metric"):
+        harness.fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
 
 
 def test_report_guardrail_serialization_and_summary_block() -> None:

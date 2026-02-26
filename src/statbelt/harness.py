@@ -27,6 +27,7 @@ from statbelt.metrics import (
     metric_higher_is_better,
     metric_requires_probability,
     metric_requires_score,
+    resolve_metric_names,
     validate_estimator_for_metrics,
     validate_metric_names,
 )
@@ -41,9 +42,14 @@ from statbelt.report import (
 
 
 class ExperimentalHarness:
-    """Builder-style API for reproducible binary classification evaluation."""
+    """Builder-style API for reproducible classification evaluation."""
 
     _TASK_BINARY_CLASSIFICATION = "binary_classification"
+    _TASK_MULTICLASS_CLASSIFICATION = "multiclass_classification"
+    _SUPPORTED_TASKS = {
+        _TASK_BINARY_CLASSIFICATION,
+        _TASK_MULTICLASS_CLASSIFICATION,
+    }
     _STATE_CONFIGURING = "configuring"
     _STATE_FASTENED = "fastened"
     _STATE_EVALUATED = "evaluated"
@@ -120,9 +126,10 @@ class ExperimentalHarness:
 
     def task(self, task_name: str) -> Self:
         self._ensure_configuring()
-        if task_name != self._TASK_BINARY_CLASSIFICATION:
+        if task_name not in self._SUPPORTED_TASKS:
+            supported = ", ".join(sorted(self._SUPPORTED_TASKS))
             raise ValidationError(
-                f"Only '{self._TASK_BINARY_CLASSIFICATION}' is supported in v0."
+                f"Unsupported task '{task_name}'. Supported tasks: {supported}."
             )
         self._task = task_name
         return self
@@ -364,6 +371,7 @@ class ExperimentalHarness:
 
         class_labels = np.unique(self._y)
         positive_label = class_labels[-1]
+        task_name = self._task
         needs_probability = any(
             metric_requires_probability(metric_name) for metric_name in self._metric_names
         )
@@ -412,6 +420,7 @@ class ExperimentalHarness:
                         y_proba=y_proba,
                         positive_label=positive_label,
                         class_labels=class_labels,
+                        task_name=task_name,
                     )
                     fold_metrics[metric_name].append(metric_value)
 
@@ -474,18 +483,34 @@ class ExperimentalHarness:
             raise ConfigurationError("compare(...) must be configured before fasten().")
         if not self._metric_names:
             raise ConfigurationError("metrics(...) must be configured before fasten().")
-        if self._task != self._TASK_BINARY_CLASSIFICATION:
+        if self._task not in self._SUPPORTED_TASKS:
+            supported = ", ".join(sorted(self._SUPPORTED_TASKS))
             raise ConfigurationError(
-                f"Only '{self._TASK_BINARY_CLASSIFICATION}' is supported in v0."
+                f"Unsupported task '{self._task}'. Supported tasks: {supported}."
             )
 
         try:
             target_type = type_of_target(self._y, raise_unknown=True)
             class_labels = unique_labels(self._y)
         except ValueError as exc:
-            raise ValidationError("binary_classification task requires exactly two classes.") from exc
-        if target_type != "binary" or class_labels.size != 2:
-            raise ValidationError("binary_classification task requires exactly two classes.")
+            if self._task == self._TASK_BINARY_CLASSIFICATION:
+                raise ValidationError(
+                    "binary_classification task requires exactly two classes."
+                ) from exc
+            raise ValidationError(
+                "multiclass_classification task requires at least three classes."
+            ) from exc
+
+        if self._task == self._TASK_BINARY_CLASSIFICATION:
+            if target_type != "binary" or class_labels.size != 2:
+                raise ValidationError(
+                    "binary_classification task requires exactly two classes."
+                )
+        else:
+            if target_type != "multiclass" or class_labels.size < 3:
+                raise ValidationError(
+                    "multiclass_classification task requires at least three classes."
+                )
         _, counts = np.unique(self._y, return_counts=True)
         if counts.min() < self._cv:
             raise ValidationError(
@@ -494,28 +519,68 @@ class ExperimentalHarness:
         if self._X.shape[0] < self._cv:
             raise ValidationError("Number of samples must be at least cv.")
 
+        resolved_metric_names = resolve_metric_names(self._metric_names, task_name=self._task)
+        resolved_practical_significance = self._resolve_threshold_metrics(
+            self._practical_significance,
+            setting_name="practical_significance",
+        )
+        resolved_guardrail_thresholds = self._resolve_threshold_metrics(
+            self._guardrail_min_improvement,
+            setting_name="guardrails",
+        )
+
         model_names = {model_name for model_name, _ in self._models}
         if self._baseline_model_name is not None and self._baseline_model_name not in model_names:
             raise ValidationError(
                 f"Baseline model '{self._baseline_model_name}' was not found in compare(...)."
             )
-        for metric_name in self._practical_significance:
-            if metric_name not in self._metric_names:
+        for metric_name in resolved_practical_significance:
+            if metric_name not in resolved_metric_names:
                 raise ConfigurationError(
                     f"practical_significance metric '{metric_name}' must also be included in metrics(...)."
                 )
-        if self._guardrail_min_improvement and self._baseline_model_name is None:
+        if resolved_guardrail_thresholds and self._baseline_model_name is None:
             raise ConfigurationError("guardrails(...) requires baseline(...).")
-        if self._guardrail_min_improvement and len(self._models) < 2:
+        if resolved_guardrail_thresholds and len(self._models) < 2:
             raise ConfigurationError("guardrails(...) requires at least two models.")
-        for metric_name in self._guardrail_min_improvement:
-            if metric_name not in self._metric_names:
+        for metric_name in resolved_guardrail_thresholds:
+            if metric_name not in resolved_metric_names:
                 raise ConfigurationError(
                     f"guardrails metric '{metric_name}' must also be included in metrics(...)."
                 )
 
         for model_name, estimator in self._models:
-            validate_estimator_for_metrics(estimator, model_name, self._metric_names)
+            validate_estimator_for_metrics(
+                estimator,
+                model_name,
+                resolved_metric_names,
+                task_name=self._task,
+            )
+
+        self._metric_names = resolved_metric_names
+        self._practical_significance = resolved_practical_significance
+        self._guardrail_min_improvement = resolved_guardrail_thresholds
+
+    def _resolve_threshold_metrics(
+        self,
+        thresholds: dict[str, float],
+        *,
+        setting_name: str,
+    ) -> dict[str, float]:
+        assert self._task is not None
+        resolved: dict[str, float] = {}
+        for metric_name, threshold in thresholds.items():
+            resolved_metric_name = resolve_metric_names(
+                (metric_name,),
+                task_name=self._task,
+            )[0]
+            if resolved_metric_name in resolved:
+                raise ConfigurationError(
+                    f"{setting_name} contains duplicate thresholds after task-based metric "
+                    f"resolution ('{metric_name}' maps to '{resolved_metric_name}')."
+                )
+            resolved[resolved_metric_name] = threshold
+        return resolved
 
     def _build_splits(
         self,
@@ -544,7 +609,7 @@ class ExperimentalHarness:
         split_metadata: list[dict[str, int]],
     ) -> None:
         payload = {
-            "schema_version": 2,
+            "schema_version": 3,
             "task": self._task,
             "metrics": list(self._metric_names),
             "cv": self._cv,

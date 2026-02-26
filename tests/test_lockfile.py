@@ -32,6 +32,7 @@ def test_fasten_writes_lockfile_with_expected_shape(tmp_path) -> None:
     )
 
     lock_payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    assert lock_payload["schema_version"] == 3
     assert lock_payload["task"] == "binary_classification"
     assert lock_payload["cv"] == 5
     assert lock_payload["random_state"] == 42
@@ -39,6 +40,37 @@ def test_fasten_writes_lockfile_with_expected_shape(tmp_path) -> None:
     assert lock_payload["metrics"] == ["accuracy", "roc_auc"]
     assert len(lock_payload["splits"]) == 5
     assert all("train" in split and "test" in split for split in lock_payload["splits"])
+
+
+def test_multiclass_lockfile_serializes_resolved_metrics(tmp_path) -> None:
+    X, y = make_classification(
+        n_samples=150,
+        n_features=8,
+        n_informative=6,
+        n_redundant=0,
+        n_classes=3,
+        n_clusters_per_class=1,
+        random_state=55,
+    )
+    lock_path = tmp_path / "multiclass.lock.json"
+
+    (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(("logreg", LogisticRegression(max_iter=500)))
+        .metrics("accuracy", "precision", "roc_auc")
+        .fasten(lock_path=str(lock_path))
+    )
+
+    lock_payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    assert lock_payload["schema_version"] == 3
+    assert lock_payload["task"] == "multiclass_classification"
+    assert lock_payload["metrics"] == [
+        "accuracy",
+        "precision_macro",
+        "roc_auc_ovr_macro",
+    ]
 
 
 def test_same_seed_produces_identical_splits(tmp_path) -> None:

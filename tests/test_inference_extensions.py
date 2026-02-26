@@ -21,6 +21,20 @@ def _strong_binary_data() -> tuple[object, object]:
     )
 
 
+def _strong_multiclass_data() -> tuple[object, object]:
+    return make_classification(
+        n_samples=600,
+        n_features=12,
+        n_informative=9,
+        n_redundant=0,
+        n_classes=3,
+        n_clusters_per_class=1,
+        class_sep=2.0,
+        flip_y=0.0,
+        random_state=222,
+    )
+
+
 def _pairwise_by_metric(report: object) -> dict[str, object]:
     return {comparison.metric: comparison for comparison in report.pairwise}
 
@@ -141,6 +155,74 @@ def test_one_sided_pairwise_respects_metric_direction(tmp_path) -> None:
     assert greater["log_loss"].p_value < less["log_loss"].p_value
 
 
+def test_multiclass_pairwise_comparisons_are_emitted(tmp_path) -> None:
+    X, y = _strong_multiclass_data()
+
+    report = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(
+            ("logreg", LogisticRegression(max_iter=600)),
+            ("dummy", DummyClassifier(strategy="most_frequent")),
+        )
+        .metrics("accuracy", "roc_auc", "log_loss")
+        .design(cv=5, cv_repeats=2, random_state=19)
+        .inference(alpha=0.05, bootstrap_resamples=200)
+        .fasten(lock_path=str(tmp_path / "statbelt.lock.json"))
+        .evaluate()
+    )
+
+    assert {comparison.metric for comparison in report.pairwise} == {
+        "accuracy",
+        "roc_auc_ovr_macro",
+        "log_loss",
+    }
+
+
+def test_multiclass_one_sided_pairwise_respects_metric_direction(tmp_path) -> None:
+    X, y = _strong_multiclass_data()
+
+    report_greater = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(
+            ("logreg", LogisticRegression(max_iter=600)),
+            ("dummy", DummyClassifier(strategy="most_frequent")),
+        )
+        .metrics("accuracy", "log_loss")
+        .design(cv=5, cv_repeats=2, random_state=23)
+        .inference(alpha=0.05, bootstrap_resamples=200)
+        .compare_inference(method="paired_bootstrap", alternative="greater")
+        .fasten(lock_path=str(tmp_path / "greater.lock.json"))
+        .evaluate()
+    )
+    report_less = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(
+            ("logreg", LogisticRegression(max_iter=600)),
+            ("dummy", DummyClassifier(strategy="most_frequent")),
+        )
+        .metrics("accuracy", "log_loss")
+        .design(cv=5, cv_repeats=2, random_state=23)
+        .inference(alpha=0.05, bootstrap_resamples=200)
+        .compare_inference(method="paired_bootstrap", alternative="less")
+        .fasten(lock_path=str(tmp_path / "less.lock.json"))
+        .evaluate()
+    )
+
+    greater = _pairwise_by_metric(report_greater)
+    less = _pairwise_by_metric(report_less)
+
+    assert greater["accuracy"].delta > 0
+    assert greater["accuracy"].p_value < less["accuracy"].p_value
+    assert greater["log_loss"].delta < 0
+    assert greater["log_loss"].p_value < less["log_loss"].p_value
+
+
 def test_compare_inference_rejects_non_string_options() -> None:
     harness = ExperimentalHarness()
 
@@ -215,6 +297,53 @@ def test_multiplicity_per_metric_differs_from_global_bonferroni(tmp_path) -> Non
     by_metric_global = _pairwise_by_metric(report_global)
     by_metric_per_metric = _pairwise_by_metric(report_per_metric)
 
+    for metric_name in ("accuracy", "log_loss"):
+        global_comparison = by_metric_global[metric_name]
+        per_metric_comparison = by_metric_per_metric[metric_name]
+        assert per_metric_comparison.p_adjusted == pytest.approx(per_metric_comparison.p_value)
+        assert global_comparison.p_adjusted == pytest.approx(
+            min(1.0, global_comparison.p_value * 2)
+        )
+        assert global_comparison.p_adjusted >= per_metric_comparison.p_adjusted
+
+
+def test_multiclass_multiplicity_per_metric_differs_from_global_bonferroni(tmp_path) -> None:
+    X, y = _strong_multiclass_data()
+
+    report_global = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(
+            ("logreg", LogisticRegression(max_iter=600)),
+            ("dummy", DummyClassifier(strategy="most_frequent")),
+        )
+        .metrics("accuracy", "log_loss")
+        .design(cv=5, cv_repeats=2, random_state=29)
+        .inference(alpha=0.05, bootstrap_resamples=180)
+        .multiplicity(method="bonferroni", family="global")
+        .fasten(lock_path=str(tmp_path / "global.lock.json"))
+        .evaluate()
+    )
+
+    report_per_metric = (
+        ExperimentalHarness()
+        .data(X, y)
+        .task("multiclass_classification")
+        .compare(
+            ("logreg", LogisticRegression(max_iter=600)),
+            ("dummy", DummyClassifier(strategy="most_frequent")),
+        )
+        .metrics("accuracy", "log_loss")
+        .design(cv=5, cv_repeats=2, random_state=29)
+        .inference(alpha=0.05, bootstrap_resamples=180)
+        .multiplicity(method="bonferroni", family="per_metric")
+        .fasten(lock_path=str(tmp_path / "per_metric.lock.json"))
+        .evaluate()
+    )
+
+    by_metric_global = _pairwise_by_metric(report_global)
+    by_metric_per_metric = _pairwise_by_metric(report_per_metric)
     for metric_name in ("accuracy", "log_loss"):
         global_comparison = by_metric_global[metric_name]
         per_metric_comparison = by_metric_per_metric[metric_name]
@@ -406,7 +535,7 @@ def test_cv_repeats_lockfile_contains_repeat_metadata(tmp_path) -> None:
     )
 
     lock_payload = json.loads(lock_path.read_text(encoding="utf-8"))
-    assert lock_payload["schema_version"] == 2
+    assert lock_payload["schema_version"] == 3
     assert lock_payload["cv_repeats"] == 2
     assert len(lock_payload["splits"]) == 8
     assert {split["repeat"] for split in lock_payload["splits"]} == {0, 1}
